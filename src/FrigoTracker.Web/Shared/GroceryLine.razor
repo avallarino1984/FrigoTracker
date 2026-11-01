@@ -1,0 +1,20 @@
+@* One grocery line: tap to check, × to remove. *@
+@inject AppState State
+
+<li class="check-line @(Line.Checked ? "checked" : "")">
+    <button class="check" aria-label="Cocher" @onclick="() => State.ToggleGroceryAsync(Line.Id)">
+        @(Line.Checked ? "✓" : "")
+    </button>
+    <span class="check-text" @onclick="() => State.ToggleGroceryAsync(Line.Id)">
+        @Line.Name
+        @if (!string.IsNullOrEmpty(Line.Quantity))
+        {
+            <span class="muted small"> · @Line.Quantity</span>
+        }
+    </span>
+    <button class="link danger" aria-label="Retirer" @onclick="() => State.DeleteGroceryAsync(Line.Id)">✕</button>
+</li>
+
+@code {
+    [Parameter, EditorRequired] public GroceryItem Line { get; set; } = default!;
+}

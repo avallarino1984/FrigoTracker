@@ -1,0 +1,77 @@
+@page "/epicerie"
+@inherits StateComponent
+
+<PageTitle>Épicerie</PageTitle>
+
+<h1>Liste d'épicerie</h1>
+
+<section class="card">
+    <form class="add-row" @onsubmit="Add">
+        <input @bind="_name" @bind:event="oninput" placeholder="Ajouter un article…" autocomplete="off" list="grocery-names" />
+        <input class="qty-input" @bind="_quantity" placeholder="Qté" autocomplete="off" />
+        <button class="btn primary" type="submit" disabled="@string.IsNullOrWhiteSpace(_name)">＋</button>
+    </form>
+    <datalist id="grocery-names">
+        @foreach (var name in State.Items.Select(i => i.Name).Distinct(StringComparer.CurrentCultureIgnoreCase))
+        {
+            <option value="@name"></option>
+        }
+    </datalist>
+    @if (_duplicate is not null)
+    {
+        <p class="muted small">« @_duplicate » est déjà sur la liste.</p>
+    }
+</section>
+
+@if (Open.Count == 0 && Done.Count == 0)
+{
+    <p class="muted center">La liste est vide.</p>
+}
+
+@if (Open.Count > 0)
+{
+    <ul class="card check-list">
+        @foreach (var line in Open)
+        {
+            <GroceryLine Line="line" />
+        }
+    </ul>
+}
+
+@if (Done.Count > 0)
+{
+    <div class="row-between">
+        <h2>Dans le panier (@(Done.Count))</h2>
+        <button class="link" @onclick="State.ClearCheckedGroceryAsync">Vider</button>
+    </div>
+    <ul class="card check-list done">
+        @foreach (var line in Done)
+        {
+            <GroceryLine Line="line" />
+        }
+    </ul>
+}
+
+@code {
+    private string _name = "";
+    private string _quantity = "";
+    private string? _duplicate;
+
+    private List<GroceryItem> Open => State.Grocery.Where(g => !g.Checked).ToList();
+    private List<GroceryItem> Done => State.Grocery.Where(g => g.Checked).ToList();
+
+    private async Task Add()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            return;
+        }
+        _duplicate = GroceryRules.FindOpenDuplicate(State.Grocery, _name)?.Name;
+        if (_duplicate is null)
+        {
+            await State.AddGroceryAsync(_name, _quantity);
+        }
+        _name = "";
+        _quantity = "";
+    }
+}

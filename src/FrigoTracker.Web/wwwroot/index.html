@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#2563a8" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Frigo" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>Frigo</title>
+    <script>
+        // GitHub Pages serves the app from /<repo>/; everywhere else it runs at the root.
+        (function () {
+            var base = '/';
+            if (location.hostname.endsWith('github.io')) {
+                var first = location.pathname.split('/')[1];
+                if (first) base = '/' + first + '/';
+            }
+            document.write('<base href="' + base + '" />');
+        })();
+    </script>
+    <link rel="preload" id="webassembly" />
+    <link rel="stylesheet" href="css/app.css" />
+    <!-- If you add any scoped CSS files, uncomment the following to load them
+    <link href="FrigoTracker.Web.styles.css" rel="stylesheet" /> -->
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <script type="importmap"></script>
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        Une erreur est survenue.
+        <a href="." class="reload">Recharger</a>
+        <span class="dismiss">🗙</span>
+    </div>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+    <script>
+        navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' });
+
+        // When a new version takes over, reload once so the page runs the new code.
+        if (navigator.serviceWorker.controller) {
+            var reloading = false;
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+                if (reloading) return;
+                reloading = true;
+                location.reload();
+            });
+        }
+
+        // Small JS helpers called from Blazor.
+        window.frigo = {
+            // Saves text content as a file (export / backup).
+            download: function (fileName, content, mime) {
+                const blob = new Blob([content], { type: mime });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            },
+            // Notifies Blazor when the app returns to the foreground, to pull fresh data.
+            onVisible: function (dotNetRef) {
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState === 'visible') {
+                        dotNetRef.invokeMethodAsync('OnVisible');
+                    }
+                });
+            }
+        };
+    </script>
+</body>
+
+</html>

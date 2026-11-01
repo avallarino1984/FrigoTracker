@@ -1,0 +1,59 @@
+# Builds, tests and deploys the Blazor PWA to GitHub Pages.
+# The site is served from https://<user>.github.io/<repo>/.
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a deployment halfway through.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Fail the deployment if the expiry rules or the sync outbox break.
+      - name: Test
+        run: dotnet test tests/FrigoTracker.Core.Tests
+
+      - name: Publish
+        run: dotnet publish src/FrigoTracker.Web -c Release -o publish
+
+      # The base path is computed at runtime (index.html + service worker),
+      # so published files are not modified and the service worker integrity checks still pass.
+      - name: Adapt for GitHub Pages
+        run: |
+          cd publish/wwwroot
+          # Deep links (e.g. /<repo>/poids) fall back to the app.
+          cp index.html 404.html
+          # Without this, GitHub Pages (Jekyll) hides the _framework folder.
+          touch .nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: publish/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

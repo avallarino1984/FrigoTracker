@@ -1,0 +1,81 @@
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@inject AppState State
+@inject IJSRuntime JS
+
+<div class="app">
+    <main class="content">
+        @if (State.IsLoaded)
+        {
+            @Body
+        }
+        else
+        {
+            <p class="muted center">Chargement…</p>
+        }
+    </main>
+
+    @if (State.IsLoaded && State.ShouldShowAlertPopup)
+    {
+        <AlertPopup />
+    }
+
+    <nav class="tabbar">
+        <NavLink href="" Match="NavLinkMatch.All" class="tab">
+            <span class="tab-icon">❄︎</span>
+            <span>Frigo</span>
+            @if (State.Alerts.Count > 0)
+            {
+                <span class="badge">@State.Alerts.Count</span>
+            }
+        </NavLink>
+        <NavLink href="ajouter" class="tab">
+            <span class="tab-icon">＋</span><span>Ajouter</span>
+        </NavLink>
+        <NavLink href="epicerie" class="tab">
+            <span class="tab-icon">☑︎</span>
+            <span>Épicerie</span>
+            @if (OpenGroceryCount > 0)
+            {
+                <span class="badge neutral">@OpenGroceryCount</span>
+            }
+        </NavLink>
+        <NavLink href="reglages" class="tab">
+            <span class="tab-icon">☰</span><span>Réglages</span>
+        </NavLink>
+    </nav>
+</div>
+
+@code {
+    private DotNetObjectReference<MainLayout>? _selfRef;
+
+    private int OpenGroceryCount => State.Grocery.Count(g => !g.Checked);
+
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnStateChanged;
+        await State.LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Pull each time the app comes back to the foreground, to see what the other person changed.
+            _selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("frigo.onVisible", _selfRef);
+        }
+    }
+
+    [JSInvokable]
+    public Task OnVisible() => State.SyncAsync();
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        State.Changed -= OnStateChanged;
+        _selfRef?.Dispose();
+        await ValueTask.CompletedTask;
+    }
+}

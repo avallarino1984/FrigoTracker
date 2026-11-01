@@ -1,0 +1,256 @@
+@page "/ajouter"
+@page "/article/{Id:guid}"
+@inherits StateComponent
+@inject NavigationManager Nav
+
+<PageTitle>@(IsNew ? "Ajouter" : _item.Name)</PageTitle>
+
+<h1>@(IsNew ? "Ajouter un article" : "Modifier")</h1>
+
+@if (!IsNew && State.FindItem(Id!.Value) is null)
+{
+    <section class="card">
+        <p>Cet article n'existe plus (déjà terminé ?).</p>
+        <a class="btn" href="">Retour à l'inventaire</a>
+    </section>
+}
+else
+{
+    <section class="card">
+        <label>Nom
+            <input list="known-names" @bind="_item.Name" @bind:event="oninput" @bind:after="OnNameChanged"
+                   placeholder="ex. Steak haché, Lait 2 %, Restes de chili" autocomplete="off" />
+        </label>
+        <datalist id="known-names">
+            @foreach (var name in KnownNames)
+            {
+                <option value="@name"></option>
+            }
+        </datalist>
+
+        <div class="grid2">
+            <label>Catégorie
+                <select @bind="_item.Category">
+                    @foreach (var info in StorageGuide.All)
+                    {
+                        <option value="@info.Category">@info.Label</option>
+                    }
+                </select>
+            </label>
+            <label>Emplacement
+                <select value="@_item.Location" @onchange="OnLocationChanged">
+                    @foreach (var location in Enum.GetValues<StorageLocation>())
+                    {
+                        <option value="@location">@StorageGuide.LocationLabel(location)</option>
+                    }
+                </select>
+            </label>
+        </div>
+
+        <div class="grid2">
+            <label>Quantité
+                <input type="number" inputmode="decimal" min="0" step="any" @bind="_item.Quantity" />
+            </label>
+            <label>Unité
+                <input list="units" @bind="_item.Unit" placeholder="unité, g, paquet…" autocomplete="off" />
+            </label>
+        </div>
+        <datalist id="units">
+            <option value="unité"></option>
+            <option value="paquet"></option>
+            <option value="portion"></option>
+            <option value="g"></option>
+            <option value="kg"></option>
+            <option value="L"></option>
+            <option value="ml"></option>
+        </datalist>
+
+        @* Dates each on their own line: iOS Safari date inputs overflow grid cells. *@
+        <label>@(IsFreezer ? "Congelé le" : "Rangé le")
+            <input type="date" @bind="_item.StoredOn" />
+        </label>
+
+        <label>@(IsFreezer ? "Date limite (optionnel, sinon selon le guide)" : "Meilleur avant")
+            <input type="date" @bind="_item.ExpiresOn" />
+        </label>
+        @if (!IsFreezer)
+        {
+            <div class="chips quick-dates">
+                <button class="chip" @onclick="() => ExpireIn(3)">+3 j</button>
+                <button class="chip" @onclick="() => ExpireIn(7)">+1 sem.</button>
+                <button class="chip" @onclick="() => ExpireIn(14)">+2 sem.</button>
+                <button class="chip" @onclick="() => ExpireIn(30)">+1 mois</button>
+                @if (_item.ExpiresOn is not null)
+                {
+                    <button class="chip" @onclick="() => _item.ExpiresOn = null">Sans date</button>
+                }
+            </div>
+        }
+
+        <p class="small deadline @Fmt.LevelCss(Preview.Level)">
+            @if (Preview.Deadline is { } deadline)
+            {
+                <span>À consommer avant le <strong>@Fmt.Date(deadline)</strong> (@FreshnessCalculator.Describe(Preview).ToLowerInvariant())</span>
+                @if (IsFreezer && _item.ExpiresOn is null)
+                {
+                    <span class="muted"> · @(Guide.FreezerMonths) mois au congélateur pour « @Guide.Label »</span>
+                }
+            }
+            else
+            {
+                <span class="muted">Sans date : pas d'alerte pour cet article.</span>
+            }
+        </p>
+
+        <label>Notes
+            <input @bind="_item.Notes" placeholder="optionnel" />
+        </label>
+
+        @if (_error is not null)
+        {
+            <p class="err small">@_error</p>
+        }
+
+        <button class="btn primary full" disabled="@(string.IsNullOrWhiteSpace(_item.Name))" @onclick="Save">
+            @(IsNew ? "Ajouter" : "Enregistrer")
+        </button>
+        @if (IsNew)
+        {
+            <button class="btn full" disabled="@(string.IsNullOrWhiteSpace(_item.Name))" @onclick="SaveAndNext">Ajouter et continuer</button>
+        }
+    </section>
+
+    @if (!IsNew)
+    {
+        <section class="card">
+            <div class="row-gap">
+                @if (_item.Location != StorageLocation.Freezer)
+                {
+                    <button class="btn" @onclick="() => Move(StorageLocation.Freezer)">❄︎ Mettre au congélateur</button>
+                }
+                else
+                {
+                    <button class="btn" @onclick="() => Move(StorageLocation.Fridge)">Décongeler au frigo</button>
+                }
+                <button class="btn danger" @onclick="Delete">Supprimer</button>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private InventoryItem _item = new();
+    private string? _error;
+    private string? _lastAutofill;
+
+    private bool IsNew => Id is null;
+    private bool IsFreezer => _item.Location == StorageLocation.Freezer;
+    private CategoryInfo Guide => StorageGuide.For(_item.Category);
+    private Freshness Preview => FreshnessCalculator.Evaluate(_item, AppState.Today);
+
+    /// <summary>Names already used, for autocomplete.</summary>
+    private IEnumerable<string> KnownNames =>
+        State.Items.Select(i => i.Name)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .Order(StringComparer.CurrentCultureIgnoreCase);
+
+    protected override void OnParametersSet()
+    {
+        _error = null;
+        // Work on a copy: nothing changes until "Enregistrer".
+        _item = Id is { } id && State.FindItem(id) is { } existing
+            ? existing.Clone()
+            : NewItem(StorageLocation.Fridge);
+    }
+
+    private static InventoryItem NewItem(StorageLocation location) =>
+        new() { Location = location, StoredOn = AppState.Today, Unit = "unité" };
+
+    /// <summary>Typing a known name reuses its category, unit and place (new items only).</summary>
+    private void OnNameChanged()
+    {
+        if (!IsNew || _item.Name == _lastAutofill)
+        {
+            return;
+        }
+        var known = State.Items.FirstOrDefault(i => string.Equals(i.Name, _item.Name.Trim(), StringComparison.CurrentCultureIgnoreCase));
+        if (known is not null)
+        {
+            _lastAutofill = _item.Name;
+            _item.Category = known.Category;
+            _item.Unit = known.Unit;
+            _item.Location = known.Location;
+            if (IsFreezer)
+            {
+                _item.ExpiresOn = null;
+            }
+        }
+    }
+
+    private void OnLocationChanged(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<StorageLocation>(e.Value?.ToString(), out var target))
+        {
+            return;
+        }
+        if (IsNew)
+        {
+            _item.Location = target;
+            if (target == StorageLocation.Freezer)
+            {
+                // The package date does not apply once frozen.
+                _item.ExpiresOn = null;
+            }
+        }
+        else
+        {
+            InventoryRules.MoveTo(_item, target, AppState.Today);
+        }
+    }
+
+    private void ExpireIn(int days) => _item.ExpiresOn = AppState.Today.AddDays(days);
+
+    private async Task Save()
+    {
+        if (await TrySaveAsync())
+        {
+            Nav.NavigateTo("");
+        }
+    }
+
+    private async Task SaveAndNext()
+    {
+        var location = _item.Location;
+        if (await TrySaveAsync())
+        {
+            // Same place as the previous one: usually a whole bag of groceries goes to the same spot.
+            _item = NewItem(location);
+            _lastAutofill = null;
+        }
+    }
+
+    private async Task<bool> TrySaveAsync()
+    {
+        if (_item.Quantity <= 0)
+        {
+            _error = "La quantité doit être plus grande que 0.";
+            return false;
+        }
+        await State.SaveItemAsync(_item.Clone());
+        return true;
+    }
+
+    private async Task Move(StorageLocation target)
+    {
+        await State.MoveItemAsync(_item.Id, target);
+        Nav.NavigateTo("");
+    }
+
+    private async Task Delete()
+    {
+        await State.DeleteItemAsync(_item.Id);
+        Nav.NavigateTo("");
+    }
+}

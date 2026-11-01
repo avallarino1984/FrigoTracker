@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FrigoTracker.Core/FrigoTracker.Core.csproj" />
+    <Project Path="src/FrigoTracker.Web/FrigoTracker.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FrigoTracker.Core.Tests/FrigoTracker.Core.Tests.csproj" />
+  </Folder>
+</Solution>

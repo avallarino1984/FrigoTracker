@@ -1,0 +1,41 @@
+@* Once-a-day popup listing what is expired or about to expire (freezer: a month ahead). *@
+@inherits StateComponent
+@inject NavigationManager Nav
+
+<div class="modal-backdrop" @onclick="Later">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="alert-title" @onclick:stopPropagation="true">
+        <h2 id="alert-title">⚠︎ À surveiller</h2>
+        <ul class="alert-list">
+            @foreach (var (item, freshness) in State.Alerts.Take(MaxShown))
+            {
+                <li class="@Fmt.LevelCss(freshness.Level)">
+                    <div class="item-main">
+                        <strong>@item.Name</strong>
+                        <span class="muted small">@Fmt.Where(item, AppState.Today)</span>
+                    </div>
+                    <span class="when">@FreshnessCalculator.Describe(freshness)</span>
+                </li>
+            }
+        </ul>
+        @if (State.Alerts.Count > MaxShown)
+        {
+            <p class="muted small">… et @(State.Alerts.Count - MaxShown) autre(s).</p>
+        }
+        <div class="row-gap">
+            <button class="btn primary" @onclick="Show">Voir</button>
+            <button class="btn" @onclick="Later">Plus tard</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int MaxShown = 8;
+
+    private async Task Later() => await State.DismissAlertsAsync();
+
+    private async Task Show()
+    {
+        await State.DismissAlertsAsync();
+        Nav.NavigateTo("?filtre=alertes");
+    }
+}

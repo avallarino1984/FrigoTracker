@@ -1,0 +1,94 @@
+@* Sign in with email + password (accounts created in the Supabase dashboard), sync status, sign out. *@
+@inherits StateComponent
+
+<section class="card">
+    <h2>Compte</h2>
+
+    @if (!State.CloudAvailable)
+    {
+        <p class="muted small">Synchro non configurée (Supabase absent de appsettings.json). Les données restent sur cet appareil.</p>
+    }
+    else if (State.CloudEmail is { } email)
+    {
+        <p class="small">
+            <span class="sync-dot @StatusCss"></span>
+            @StatusLabel · <strong>@email</strong>
+        </p>
+        @if (State.SyncError is { } error)
+        {
+            <p class="err small">@error</p>
+        }
+        <div class="row-gap">
+            <button class="btn" disabled="@(State.Sync == SyncStatus.Syncing)" @onclick="() => State.SyncAsync()">Synchroniser</button>
+            <button class="btn" @onclick="SignOut">Se déconnecter</button>
+        </div>
+    }
+    else
+    {
+        <p class="muted small">Connecte-toi pour partager l'inventaire et la liste d'épicerie entre vos appareils.</p>
+        <label>Courriel<input type="email" autocomplete="username" inputmode="email" @bind="_email" @bind:event="oninput" /></label>
+        <label>Mot de passe<input type="password" autocomplete="current-password" @bind="_password" @bind:event="oninput" /></label>
+        <button class="btn primary full" disabled="@(_busy || !_email.Contains('@') || _password.Length == 0)" @onclick="SignIn">Se connecter</button>
+    }
+
+    @if (_message is not null)
+    {
+        <p class="err small">@_message</p>
+    }
+</section>
+
+@code {
+    private string _email = "";
+    private string _password = "";
+    private bool _busy;
+    private string? _message;
+
+    private string StatusLabel
+    {
+        get
+        {
+            if (State.Sync == SyncStatus.Synced) return State.LastSyncedAt is { } at ? $"Synchronisé à {at:HH:mm}" : "Synchronisé";
+            if (State.Sync == SyncStatus.Syncing) return "Synchronisation…";
+            if (State.Sync == SyncStatus.Pending) return $"En attente ({State.PendingCount} modif.)";
+            if (State.Sync == SyncStatus.NoHousehold) return "Connecté, sans foyer";
+            return "Local seulement";
+        }
+    }
+
+    private string StatusCss => State.Sync switch
+    {
+        SyncStatus.Synced => "ok",
+        SyncStatus.Pending => "warn",
+        SyncStatus.NoHousehold => "warn",
+        _ => "",
+    };
+
+    private async Task SignIn()
+    {
+        _busy = true;
+        _message = null;
+        try
+        {
+            await State.SignInAsync(_email, _password);
+            _password = "";
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task SignOut()
+    {
+        if (State.PendingCount > 0)
+        {
+            _message = $"{State.PendingCount} modification(s) pas encore envoyée(s) : synchronise avant de te déconnecter.";
+            return;
+        }
+        await State.SignOutAsync();
+    }
+}

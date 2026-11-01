@@ -1,0 +1,67 @@
+@* The shared household: create it once, then the other person joins it with the code. *@
+@inherits StateComponent
+
+<section class="card">
+    <h2>Foyer</h2>
+
+    @if (State.Household is { } household)
+    {
+        <p><strong>@household.Name</strong></p>
+        <p class="small">Code pour rejoindre le foyer : <code class="join-code">@household.JoinCode</code></p>
+        <p class="muted small">L'autre personne se connecte avec son propre compte, puis entre ce code ici.</p>
+    }
+    else if (State.Sync == SyncStatus.NoHousehold)
+    {
+        <p class="muted small">Une seule personne crée le foyer ; l'autre le rejoint avec le code affiché ensuite.</p>
+
+        <label>Rejoindre avec un code
+            <input @bind="_code" @bind:event="oninput" placeholder="ex. 3FA9C2" autocapitalize="characters" autocomplete="off" />
+        </label>
+        <button class="btn primary full" disabled="@(_busy || _code.Trim().Length < 6)" @onclick="Join">Rejoindre</button>
+
+        <hr />
+
+        <label>Ou créer un foyer
+            <input @bind="_name" @bind:event="oninput" placeholder="Maison" />
+        </label>
+        <button class="btn full" disabled="@_busy" @onclick="Create">Créer le foyer</button>
+    }
+    else
+    {
+        <p class="muted small">Recherche du foyer…</p>
+    }
+
+    @if (_message is not null)
+    {
+        <p class="err small">@_message</p>
+    }
+</section>
+
+@code {
+    private string _code = "";
+    private string _name = "Maison";
+    private bool _busy;
+    private string? _message;
+
+    private Task Join() => Run(() => State.JoinHouseholdAsync(_code));
+
+    private Task Create() => Run(() => State.CreateHouseholdAsync(_name));
+
+    private async Task Run(Func<Task> action)
+    {
+        _busy = true;
+        _message = null;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

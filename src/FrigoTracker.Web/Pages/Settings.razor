@@ -1,0 +1,36 @@
+@page "/reglages"
+@inherits StateComponent
+
+<PageTitle>Réglages</PageTitle>
+
+<h1>Réglages</h1>
+
+<AccountCard />
+
+@if (State.Sync != SyncStatus.LocalOnly)
+{
+    <HouseholdCard />
+}
+
+<section class="card">
+    <h2>Guide de conservation au congélateur</h2>
+    <p class="muted small">
+        Durées maximales indicatives à −18 °C. L'alerte arrive @(FreshnessCalculator.FreezerWarningDays) jours avant
+        (@(FreshnessCalculator.FridgeWarningDays) jours pour le frigo, @(FreshnessCalculator.PantryWarningDays) pour le garde-manger).
+    </p>
+    <table class="guide">
+        <thead>
+            <tr><th>Catégorie</th><th>Congélateur</th><th>Décongelé</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var info in StorageGuide.All)
+            {
+                <tr>
+                    <td>@info.Label</td>
+                    <td class="num">@(info.FreezerMonths) mois</td>
+                    <td class="num">@(info.ThawedFridgeDays) j</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>

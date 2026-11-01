@@ -1,0 +1,171 @@
+@page "/"
+@inherits StateComponent
+@inject NavigationManager Nav
+
+<PageTitle>Frigo</PageTitle>
+
+<div class="row-between">
+    <h1>@(State.Household?.Name ?? "Inventaire")</h1>
+    <button class="icon-btn" title="Synchroniser" disabled="@(State.Sync == SyncStatus.Syncing)" @onclick="() => State.SyncAsync()">⟳</button>
+</div>
+
+@if (State.Sync is SyncStatus.LocalOnly or SyncStatus.NoHousehold)
+{
+    <p class="notice small">Données sur cet appareil seulement. <a href="reglages">Connecte-toi et rejoins le foyer</a> pour partager l'inventaire.</p>
+}
+else if (State.Sync == SyncStatus.Pending)
+{
+    <p class="notice small">@(State.PendingCount) modification(s) en attente d'envoi. @State.SyncError</p>
+}
+
+<input class="search" type="search" placeholder="Rechercher…" @bind="_search" @bind:event="oninput" />
+
+<div class="chips filter">
+    <button class="chip @(_filter == Filter.All ? "on" : "")" @onclick="() => SetFilter(Filter.All)">Tout (@(State.Items.Count))</button>
+    <button class="chip @(_filter == Filter.Alerts ? "on" : "")" @onclick="() => SetFilter(Filter.Alerts)">⚠︎ À surveiller (@(State.Alerts.Count))</button>
+    @foreach (var location in Enum.GetValues<StorageLocation>())
+    {
+        var loc = location;
+        <button class="chip @(_filter == Filter.Location && _location == loc ? "on" : "")" @onclick="() => SetLocation(loc)">
+            @(StorageGuide.LocationLabel(loc)) (@(State.Items.Count(i => i.Location == loc)))
+        </button>
+    }
+</div>
+
+@if (Visible.Count == 0)
+{
+    <section class="card center">
+        @if (State.Items.Count == 0)
+        {
+            <p>Rien dans l'inventaire pour l'instant.</p>
+            <a class="btn primary" href="ajouter">Ajouter un article</a>
+        }
+        else
+        {
+            <p class="muted">Aucun article ne correspond.</p>
+        }
+    </section>
+}
+else
+{
+    <ul class="item-list">
+        @foreach (var (item, freshness) in Visible)
+        {
+            <li class="card item @Fmt.LevelCss(freshness.Level)">
+                <a class="item-main" href="article/@item.Id">
+                    <span class="item-name">@item.Name</span>
+                    <span class="muted small">@Fmt.LocationIcon(item.Location) @Fmt.Where(item, AppState.Today)</span>
+                    <span class="when small">@FreshnessCalculator.Describe(freshness)
+                        @if (freshness.Deadline is { } deadline)
+                        {
+                            <span class="muted"> · @Fmt.Date(deadline)</span>
+                        }
+                    </span>
+                </a>
+                <div class="item-side">
+                    <span class="qty">@Fmt.QtyUnit(item)</span>
+                    <div class="row-gap">
+                        <button class="btn small" title="En retirer 1" @onclick="() => Consume(item)">−1</button>
+                        <button class="btn small" title="Terminé" @onclick="() => Finish(item)">✓</button>
+                    </div>
+                </div>
+            </li>
+        }
+    </ul>
+}
+
+@if (_finished is { } done)
+{
+    <div class="toast">
+        <span><strong>@done</strong> est terminé.</span>
+        <button class="btn small primary" @onclick="AddFinishedToGrocery">Ajouter à l'épicerie</button>
+        <button class="link" @onclick="() => _finished = null">Fermer</button>
+    </div>
+}
+
+@code {
+    private enum Filter { All, Alerts, Location }
+
+    [SupplyParameterFromQuery(Name = "filtre")] public string? FilterQuery { get; set; }
+
+    private Filter _filter = Filter.All;
+    private StorageLocation _location = StorageLocation.Fridge;
+    private string _search = "";
+    private string? _finished;
+
+    protected override void OnParametersSet()
+    {
+        if (FilterQuery == "alertes")
+        {
+            _filter = Filter.Alerts;
+        }
+    }
+
+    /// <summary>Filtered items, most urgent first; items without a date at the end, by name.</summary>
+    private List<(InventoryItem Item, Freshness Freshness)> Visible
+    {
+        get
+        {
+            var today = AppState.Today;
+            IEnumerable<InventoryItem> items = State.Items;
+            if (_filter == Filter.Location)
+            {
+                items = items.Where(i => i.Location == _location);
+            }
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                items = items.Where(i => i.Name.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase));
+            }
+
+            var rows = items.Select(i => (Item: i, Freshness: FreshnessCalculator.Evaluate(i, today)));
+            if (_filter == Filter.Alerts)
+            {
+                rows = rows.Where(r => r.Freshness.Level is FreshnessLevel.Expired or FreshnessLevel.Soon);
+            }
+            return rows
+                .OrderBy(r => r.Freshness.DaysLeft ?? int.MaxValue)
+                .ThenBy(r => r.Item.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+    }
+
+    private void SetFilter(Filter filter)
+    {
+        _filter = filter;
+        // Drop ?filtre=alertes from the address so it does not stick.
+        if (FilterQuery is not null)
+        {
+            Nav.NavigateTo("", replace: true);
+        }
+    }
+
+    private void SetLocation(StorageLocation location)
+    {
+        SetFilter(Filter.Location);
+        _location = location;
+    }
+
+    private async Task Consume(InventoryItem item)
+    {
+        string name = item.Name;
+        if (await State.ConsumeAsync(item.Id, 1))
+        {
+            _finished = name;
+        }
+    }
+
+    private async Task Finish(InventoryItem item)
+    {
+        _finished = item.Name;
+        await State.DeleteItemAsync(item.Id);
+    }
+
+    private async Task AddFinishedToGrocery()
+    {
+        if (_finished is { } name)
+        {
+            await State.AddGroceryAsync(name);
+        }
+        _finished = null;
+    }
+}
