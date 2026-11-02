@@ -38,16 +38,17 @@ public static class Fmt
         return counted ? $"×{Qty(item.Quantity)}" : $"{Qty(item.Quantity)} {item.Unit.Trim()}";
     }
 
-    /// <summary>"Congelé il y a 5 mois", "Rangé il y a 3 j", "Rangé aujourd'hui".</summary>
+    /// <summary>"Congelé le 20 août", "Rangé le 3 nov. 2025" (year only when not the current one), "Rangé aujourd'hui".</summary>
     public static string Age(InventoryItem item, DateOnly today)
     {
         string verb = item.Location == StorageLocation.Freezer ? "Congelé" : "Rangé";
-        int days = today.DayNumber - item.StoredOn.DayNumber;
-        if (days <= 0) return $"{verb} aujourd'hui";
-        int months = FreshnessCalculator.MonthsBetween(item.StoredOn, today);
-        if (months > 0) return $"{verb} il y a {months} mois";
-        return $"{verb} il y a {days} j";
+        if (item.StoredOn == today) return $"{verb} aujourd'hui";
+        return $"{verb} le {ShortDate(item.StoredOn, today)}";
     }
+
+    /// <summary>"20 août" this year, "20 août 2025" otherwise.</summary>
+    public static string ShortDate(DateOnly date, DateOnly today) =>
+        date.ToString(date.Year == today.Year ? "d MMM" : "d MMM yyyy", Fr);
 
     public static string LevelCss(FreshnessLevel level)
     {
