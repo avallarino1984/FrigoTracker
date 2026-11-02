@@ -1,0 +1,25 @@
+@* One inventory item drawn as a freezer-tape label: name in marker, age, time left and a storage-life gauge. *@
+
+<li class="label @Fmt.LevelCss(Freshness.Level)">
+    <a href="article/@Item.Id">
+        <span class="tape">
+            <span class="label-name">@Item.Name</span>
+            <span class="label-qty">@Fmt.LabelQty(Item)</span>
+        </span>
+        <span class="label-meta">
+            <span>@Fmt.Age(Item, AppState.Today)</span>
+            <span class="when">@FreshnessCalculator.Describe(Freshness)</span>
+        </span>
+        @if (FreshnessCalculator.ElapsedShare(Item, AppState.Today) is { } share)
+        {
+            <span class="gauge" role="img" aria-label="@(Math.Round(Math.Min(share, 1) * 100)) % de la durée de conservation">
+                <i style="width: @(Math.Round(Math.Min(share, 1) * 100).ToString(System.Globalization.CultureInfo.InvariantCulture))%"></i>
+            </span>
+        }
+    </a>
+</li>
+
+@code {
+    [Parameter, EditorRequired] public InventoryItem Item { get; set; } = default!;
+    [Parameter, EditorRequired] public Freshness Freshness { get; set; } = default!;
+}

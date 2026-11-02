@@ -35,7 +35,12 @@
 
     private async Task Show()
     {
+        // Open the shelf of the most urgent item.
+        if (State.Alerts.Count > 0)
+        {
+            Pages.Home.LastLocation = State.Alerts[0].Item.Location;
+        }
         await State.DismissAlertsAsync();
-        Nav.NavigateTo("?filtre=alertes");
+        Nav.NavigateTo("");
     }
 }

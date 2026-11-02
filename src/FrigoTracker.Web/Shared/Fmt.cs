@@ -30,6 +30,25 @@ public static class Fmt
         return $"{place} · depuis {days} j";
     }
 
+    /// <summary>Quantity on the label: "×3" for counted things, "500 g" when the unit is a measure.</summary>
+    public static string LabelQty(InventoryItem item)
+    {
+        string unit = item.Unit.Trim().ToLowerInvariant();
+        bool counted = unit is "" or "unité" or "unités" or "paquet" or "paquets" or "portion" or "portions";
+        return counted ? $"×{Qty(item.Quantity)}" : $"{Qty(item.Quantity)} {item.Unit.Trim()}";
+    }
+
+    /// <summary>"Congelé il y a 5 mois", "Rangé il y a 3 j", "Rangé aujourd'hui".</summary>
+    public static string Age(InventoryItem item, DateOnly today)
+    {
+        string verb = item.Location == StorageLocation.Freezer ? "Congelé" : "Rangé";
+        int days = today.DayNumber - item.StoredOn.DayNumber;
+        if (days <= 0) return $"{verb} aujourd'hui";
+        int months = FreshnessCalculator.MonthsBetween(item.StoredOn, today);
+        if (months > 0) return $"{verb} il y a {months} mois";
+        return $"{verb} il y a {days} j";
+    }
+
     public static string LevelCss(FreshnessLevel level)
     {
         if (level == FreshnessLevel.Expired) return "expired";

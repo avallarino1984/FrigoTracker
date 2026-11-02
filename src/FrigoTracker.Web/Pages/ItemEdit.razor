@@ -5,7 +5,7 @@
 
 <PageTitle>@(IsNew ? "Ajouter" : _item.Name)</PageTitle>
 
-<h1>@(IsNew ? "Ajouter un article" : "Modifier")</h1>
+<h1 class="@(IsNew ? "" : "place-title")">@(IsNew ? "Ajouter un article" : _item.Name)</h1>
 
 @if (!IsNew && State.FindItem(Id!.Value) is null)
 {
@@ -16,6 +16,21 @@
 }
 else
 {
+    if (!IsNew)
+    {
+        <section class="quick">
+            <p class="quick-title"><strong>@Fmt.LabelQty(_item)</strong> · @Fmt.Age(_item, AppState.Today) · @FreshnessCalculator.Describe(Preview)</p>
+            <div class="quick-actions">
+                <button class="btn primary" @onclick="EatOne">Manger 1</button>
+                <button class="btn" @onclick="Finish">Terminé</button>
+            </div>
+            <label class="check-row">
+                <input type="checkbox" @bind="_addToGrocery" />
+                <span>Ajouter à l'épicerie quand c'est terminé</span>
+            </label>
+        </section>
+        <h2 class="section">Modifier</h2>
+    }
     <section class="card">
         <label>Nom
             <input list="known-names" @bind="_item.Name" @bind:event="oninput" @bind:after="OnNameChanged"
@@ -145,6 +160,8 @@ else
     private string? _error;
     private string? _lastAutofill;
 
+    private bool _addToGrocery = true;
+
     private bool IsNew => Id is null;
     private bool IsFreezer => _item.Location == StorageLocation.Freezer;
     private CategoryInfo Guide => StorageGuide.For(_item.Category);
@@ -162,7 +179,7 @@ else
         // Work on a copy: nothing changes until "Enregistrer".
         _item = Id is { } id && State.FindItem(id) is { } existing
             ? existing.Clone()
-            : NewItem(StorageLocation.Fridge);
+            : NewItem(Home.LastLocation ?? StorageLocation.Fridge);
     }
 
     private static InventoryItem NewItem(StorageLocation location) =>
@@ -240,6 +257,38 @@ else
         }
         await State.SaveItemAsync(_item.Clone());
         return true;
+    }
+
+    /// <summary>Eats one unit of the saved item (not the form copy); leaves the page when it is finished.</summary>
+    private async Task EatOne()
+    {
+        string name = _item.Name;
+        if (await State.ConsumeAsync(_item.Id, 1))
+        {
+            await AfterFinishedAsync(name);
+            return;
+        }
+        // Show the new quantity, keeping nothing else from the unsaved form.
+        if (State.FindItem(_item.Id) is { } saved)
+        {
+            _item = saved.Clone();
+        }
+    }
+
+    private async Task Finish()
+    {
+        string name = _item.Name;
+        await State.DeleteItemAsync(_item.Id);
+        await AfterFinishedAsync(name);
+    }
+
+    private async Task AfterFinishedAsync(string name)
+    {
+        if (_addToGrocery)
+        {
+            await State.AddGroceryAsync(name);
+        }
+        Nav.NavigateTo("");
     }
 
     private async Task Move(StorageLocation target)

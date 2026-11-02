@@ -107,6 +107,25 @@ public class FreshnessTests
     }
 
     [Fact]
+    public void Elapsed_share_goes_from_zero_to_past_one()
+    {
+        // Salmon frozen May 10, 3-month limit on Aug 10: well past the limit on Oct 31.
+        var salmon = Item(StorageLocation.Freezer, FoodCategory.FattyFish, new DateOnly(2026, 5, 10));
+        var fresh = Item(StorageLocation.Freezer, FoodCategory.Meat, Today);
+
+        Assert.True(FreshnessCalculator.ElapsedShare(salmon, Today) > 1);
+        Assert.Equal(0, FreshnessCalculator.ElapsedShare(fresh, Today));
+    }
+
+    [Fact]
+    public void Elapsed_share_is_null_without_a_deadline()
+    {
+        var milk = Item(StorageLocation.Fridge, FoodCategory.Dairy, Today);
+
+        Assert.Null(FreshnessCalculator.ElapsedShare(milk, Today));
+    }
+
+    [Fact]
     public void Every_category_has_a_guide_entry()
     {
         foreach (var category in Enum.GetValues<FoodCategory>())

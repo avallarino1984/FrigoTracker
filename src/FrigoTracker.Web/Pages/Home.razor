@@ -1,13 +1,13 @@
 @page "/"
 @inherits StateComponent
-@inject NavigationManager Nav
 
 <PageTitle>Frigo</PageTitle>
 
 <div class="row-between">
-    <h1>@(State.Household?.Name ?? "Inventaire")</h1>
+    <h1 class="place-title">@StorageGuide.LocationLabel(Location)</h1>
     <button class="icon-btn" title="Synchroniser" disabled="@(State.Sync == SyncStatus.Syncing)" @onclick="() => State.SyncAsync()">⟳</button>
 </div>
+<p class="place-sub">@Summary</p>
 
 @if (State.Sync is SyncStatus.LocalOnly or SyncStatus.NoHousehold)
 {
@@ -18,26 +18,32 @@ else if (State.Sync == SyncStatus.Pending)
     <p class="notice small">@(State.PendingCount) modification(s) en attente d'envoi. @State.SyncError</p>
 }
 
-<input class="search" type="search" placeholder="Rechercher…" @bind="_search" @bind:event="oninput" />
-
-<div class="chips filter">
-    <button class="chip @(_filter == Filter.All ? "on" : "")" @onclick="() => SetFilter(Filter.All)">Tout (@(State.Items.Count))</button>
-    <button class="chip @(_filter == Filter.Alerts ? "on" : "")" @onclick="() => SetFilter(Filter.Alerts)">⚠︎ À surveiller (@(State.Alerts.Count))</button>
+<div class="seg" role="tablist">
     @foreach (var location in Enum.GetValues<StorageLocation>())
     {
         var loc = location;
-        <button class="chip @(_filter == Filter.Location && _location == loc ? "on" : "")" @onclick="() => SetLocation(loc)">
-            @(StorageGuide.LocationLabel(loc)) (@(State.Items.Count(i => i.Location == loc)))
+        int urgent = UrgentCount(loc);
+        <button role="tab" aria-selected="@(loc == Location ? "true" : "false")" class="@(loc == Location ? "on" : "")" @onclick="() => Location = loc">
+            @StorageGuide.LocationLabel(loc)
+            @if (urgent > 0)
+            {
+                <span class="dot" aria-label="@urgent à manger bientôt"></span>
+            }
         </button>
     }
 </div>
 
+@if (Here.Count > 6)
+{
+    <input class="search" type="search" placeholder="Rechercher…" @bind="_search" @bind:event="oninput" />
+}
+
 @if (Visible.Count == 0)
 {
-    <section class="card center">
-        @if (State.Items.Count == 0)
+    <section class="empty">
+        @if (Here.Count == 0)
         {
-            <p>Rien dans l'inventaire pour l'instant.</p>
+            <p>Rien ici pour l'instant.</p>
             <a class="btn primary" href="ajouter">Ajouter un article</a>
         }
         else
@@ -48,124 +54,85 @@ else if (State.Sync == SyncStatus.Pending)
 }
 else
 {
-    <ul class="item-list">
-        @foreach (var (item, freshness) in Visible)
-        {
-            <li class="card item @Fmt.LevelCss(freshness.Level)">
-                <a class="item-main" href="article/@item.Id">
-                    <span class="item-name">@item.Name</span>
-                    <span class="muted small">@Fmt.LocationIcon(item.Location) @Fmt.Where(item, AppState.Today)</span>
-                    <span class="when small">@FreshnessCalculator.Describe(freshness)
-                        @if (freshness.Deadline is { } deadline)
-                        {
-                            <span class="muted"> · @Fmt.Date(deadline)</span>
-                        }
-                    </span>
-                </a>
-                <div class="item-side">
-                    <span class="qty">@Fmt.QtyUnit(item)</span>
-                    <div class="row-gap">
-                        <button class="btn small" title="En retirer 1" @onclick="() => Consume(item)">−1</button>
-                        <button class="btn small" title="Terminé" @onclick="() => Finish(item)">✓</button>
-                    </div>
-                </div>
-            </li>
-        }
-    </ul>
-}
+    var first = Visible.Where(r => r.Freshness.Level is FreshnessLevel.Expired or FreshnessLevel.Soon).ToList();
+    var rest = Visible.Where(r => r.Freshness.Level is FreshnessLevel.Fresh or FreshnessLevel.Unknown).ToList();
 
-@if (_finished is { } done)
-{
-    <div class="toast">
-        <span><strong>@done</strong> est terminé.</span>
-        <button class="btn small primary" @onclick="AddFinishedToGrocery">Ajouter à l'épicerie</button>
-        <button class="link" @onclick="() => _finished = null">Fermer</button>
-    </div>
+    if (first.Count > 0)
+    {
+        <h2 class="section">À manger d'abord</h2>
+        <ul class="labels">
+            @foreach (var row in first)
+            {
+                <ItemLabel Item="row.Item" Freshness="row.Freshness" />
+            }
+        </ul>
+    }
+    if (rest.Count > 0)
+    {
+        if (first.Count > 0)
+        {
+            <h2 class="section">Le reste</h2>
+        }
+        <ul class="labels">
+            @foreach (var row in rest)
+            {
+                <ItemLabel Item="row.Item" Freshness="row.Freshness" />
+            }
+        </ul>
+    }
 }
 
 @code {
-    private enum Filter { All, Alerts, Location }
+    /// <summary>Selected place, kept while navigating so "Ajouter" and "back" stay on the same shelf.</summary>
+    public static StorageLocation? LastLocation { get; set; }
 
-    [SupplyParameterFromQuery(Name = "filtre")] public string? FilterQuery { get; set; }
-
-    private Filter _filter = Filter.All;
-    private StorageLocation _location = StorageLocation.Fridge;
     private string _search = "";
-    private string? _finished;
 
-    protected override void OnParametersSet()
+    private StorageLocation Location
     {
-        if (FilterQuery == "alertes")
+        get => LastLocation ?? DefaultLocation;
+        set
         {
-            _filter = Filter.Alerts;
+            LastLocation = value;
+            _search = "";
         }
     }
 
-    /// <summary>Filtered items, most urgent first; items without a date at the end, by name.</summary>
+    /// <summary>First visit: open where the most urgent item is, otherwise the fridge.</summary>
+    private StorageLocation DefaultLocation =>
+        State.Alerts.Count > 0 ? State.Alerts[0].Item.Location : StorageLocation.Fridge;
+
+    private List<InventoryItem> Here => State.Items.Where(i => i.Location == Location).ToList();
+
+    private int UrgentCount(StorageLocation location) => State.Alerts.Count(a => a.Item.Location == location);
+
+    private string Summary
+    {
+        get
+        {
+            int count = Here.Count;
+            string items = count == 1 ? "1 article" : $"{count} articles";
+            int urgent = UrgentCount(Location);
+            return urgent > 0 ? $"{items}, dont {urgent} à manger bientôt" : items;
+        }
+    }
+
+    /// <summary>Items of the selected place, most urgent first; items without a date at the end, by name.</summary>
     private List<(InventoryItem Item, Freshness Freshness)> Visible
     {
         get
         {
             var today = AppState.Today;
-            IEnumerable<InventoryItem> items = State.Items;
-            if (_filter == Filter.Location)
-            {
-                items = items.Where(i => i.Location == _location);
-            }
+            IEnumerable<InventoryItem> items = Here;
             if (!string.IsNullOrWhiteSpace(_search))
             {
                 items = items.Where(i => i.Name.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase));
             }
-
-            var rows = items.Select(i => (Item: i, Freshness: FreshnessCalculator.Evaluate(i, today)));
-            if (_filter == Filter.Alerts)
-            {
-                rows = rows.Where(r => r.Freshness.Level is FreshnessLevel.Expired or FreshnessLevel.Soon);
-            }
-            return rows
+            return items
+                .Select(i => (Item: i, Freshness: FreshnessCalculator.Evaluate(i, today)))
                 .OrderBy(r => r.Freshness.DaysLeft ?? int.MaxValue)
                 .ThenBy(r => r.Item.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
         }
-    }
-
-    private void SetFilter(Filter filter)
-    {
-        _filter = filter;
-        // Drop ?filtre=alertes from the address so it does not stick.
-        if (FilterQuery is not null)
-        {
-            Nav.NavigateTo("", replace: true);
-        }
-    }
-
-    private void SetLocation(StorageLocation location)
-    {
-        SetFilter(Filter.Location);
-        _location = location;
-    }
-
-    private async Task Consume(InventoryItem item)
-    {
-        string name = item.Name;
-        if (await State.ConsumeAsync(item.Id, 1))
-        {
-            _finished = name;
-        }
-    }
-
-    private async Task Finish(InventoryItem item)
-    {
-        _finished = item.Name;
-        await State.DeleteItemAsync(item.Id);
-    }
-
-    private async Task AddFinishedToGrocery()
-    {
-        if (_finished is { } name)
-        {
-            await State.AddGroceryAsync(name);
-        }
-        _finished = null;
     }
 }

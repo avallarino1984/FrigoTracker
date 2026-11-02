@@ -42,6 +42,13 @@ Document pour reprendre le code dans un nouveau chat. Le code à jour est **dans
 - Mettre au congélateur remet la date de rangement à aujourd'hui et efface la date de l'emballage ; décongeler donne la durée « décongelé » de la catégorie
 - Popup « À surveiller » à l'ouverture, une fois par jour (`AlertsDismissedOn`), + badge rouge sur l'onglet Frigo
 
+## Design
+
+- Direction « étiquettes de congélation » : fond givre, chaque article est une étiquette en ruban jaune avec le nom au marqueur (Kalam), texte en Atkinson Hyperlegible ; polices dans `wwwroot/fonts` (cachées hors ligne, `.woff2` inclus dans le service worker)
+- Inventaire : un onglet par emplacement (point rouge s'il y a de l'urgent), sections « À manger d'abord » / « Le reste », jauge = part de la durée de conservation écoulée (`FreshnessCalculator.ElapsedShare`)
+- Pas de boutons sur les étiquettes : toucher → page de l'article avec « Manger 1 » / « Terminé » (+ ajout à l'épicerie coché par défaut)
+- « Ajouter » reprend l'emplacement affiché (`Home.LastLocation`)
+
 ## Structure
 
 ```
@@ -54,7 +61,7 @@ src/FrigoTracker.Core/
 src/FrigoTracker.Web/
   Services/AppState.cs, SupabaseClient.cs (REST, sans package)
   Pages/ Home (Frigo), ItemEdit (Ajouter / Modifier), Grocery (Épicerie), Settings (Réglages)
-  Shared/ AlertPopup, AccountCard, HouseholdCard, GroceryLine, StateComponent, Fmt
+  Shared/ ItemLabel, AlertPopup, AccountCard, HouseholdCard, GroceryLine, StateComponent, Fmt
   wwwroot/ appsettings.json, index.html, service-worker.published.js, icônes
 tests/FrigoTracker.Core.Tests/
 supabase/setup.sql
@@ -66,6 +73,7 @@ supabase/setup.sql
 - **Razor** : `< 11 =>` dans un `switch` d'un bloc `@code` est lu comme une balise HTML → utiliser des `if`.
 - **Safari iOS** : les `<input type="date">` débordent dans une grille → chacun sur sa ligne.
 - **`<select>` lié à un `double`** : `@bind:culture="CultureInfo.InvariantCulture"` (navigateur en fr-CA).
+- **Cache hors ligne** : préfixe `frigo-offline-cache-` (Calories Tracker utilise `offline-cache-` sur le même domaine github.io : un préfixe commun ferait effacer le cache de l'autre app).
 - **GitHub Pages** sert l'app sous `/FrigoTracker/` : le `<base href>` et le service worker calculent ce chemin à l'exécution.
 - **Service worker** : `skipWaiting` + `clients.claim` + rechargement sur `controllerchange`.
 - **Supabase, GRANT obligatoires** pour les tables créées depuis le 2026-10-30 : déjà dans `setup.sql`. Toute nouvelle table doit avoir ses `grant … to authenticated` dans le même script, sinon « permission denied ».

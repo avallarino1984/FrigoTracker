@@ -77,6 +77,26 @@ public static class FreshnessCalculator
             .ThenBy(x => x.Item.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
+    /// <summary>
+    /// Share of the storage life already used: 0 when stored today, 1 at the deadline, above 1 once expired.
+    /// Null when the item has no deadline.
+    /// </summary>
+    public static double? ElapsedShare(InventoryItem item, DateOnly today)
+    {
+        if (Deadline(item) is not { } deadline)
+        {
+            return null;
+        }
+        int total = deadline.DayNumber - item.StoredOn.DayNumber;
+        int elapsed = today.DayNumber - item.StoredOn.DayNumber;
+        if (total <= 0)
+        {
+            // Deadline on or before the storage day: already at the limit.
+            return elapsed >= total ? 1 : 0;
+        }
+        return Math.Max(0, (double)elapsed / total);
+    }
+
     /// <summary>Whole months elapsed between two dates ("congelé depuis 8 mois").</summary>
     public static int MonthsBetween(DateOnly from, DateOnly to)
     {
